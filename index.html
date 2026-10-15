@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>멀티팡팡</title>
+    <!-- Firebase Common Module Loading -->
+    <script type="module" src="./firebase-init.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            height: 100dvh;
+            overflow: hidden;
+            background-color: #0f172a;
+        }
+        .game-frame {
+            width: 100%;
+            flex: 1;
+            min-height: 0;
+            border: none;
+            display: none;
+        }
+        .game-frame.active {
+            display: block;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-full h-[100dvh] fixed inset-0 overflow-hidden">
+
+    <!-- 최상단 원터치 스위치 바 -->
+    <header class="bg-slate-900 border-b border-slate-800 h-[56px] px-3 flex justify-between items-center z-50 shrink-0">
+        <div class="flex items-center space-x-2">
+            <span class="text-xs font-black text-slate-300">멀티팡팡</span>
+        </div>
+
+        <!-- 게임 전환 스위치 (원터치) -->
+        <div class="bg-slate-800 p-1 rounded-xl flex space-x-1 border border-slate-700">
+            <button id="switch-game1" onclick="switchGame('game1')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-pink-600 text-white shadow-md">
+                <i class="fa-solid fa-brain mr-1"></i> 메모리 테스트
+            </button>
+            <button id="switch-game2" onclick="switchGame('game2')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-white">
+                <i class="fa-solid fa-map-location-dot mr-1"></i> 국토대장정 퀴즈
+            </button>
+        </div>
+    </header>
+
+    <!-- 두 게임의 완전히 독립된 뷰포트 (iframe 격리) -->
+    <iframe id="frame-game1" src="game1.html" class="game-frame active"></iframe>
+    <iframe id="frame-game2" src="game2.html" class="game-frame"></iframe>
+
+    <script>
+        function switchGame(gameId) {
+            document.getElementById('frame-game1').classList.remove('active');
+            document.getElementById('frame-game2').classList.remove('active');
+
+            const btn1 = document.getElementById('switch-game1');
+            const btn2 = document.getElementById('switch-game2');
+
+            btn1.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-white";
+            btn2.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-white";
+
+            if (gameId === 'game1') {
+                document.getElementById('frame-game1').classList.add('active');
+                btn1.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-pink-600 text-white shadow-md";
+            } else {
+                document.getElementById('frame-game2').classList.add('active');
+                btn2.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-purple-600 text-white shadow-md";
+            }
+        }
+    </script>
+</body>
+</html>

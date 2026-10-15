@@ -1,0 +1,1999 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>기억력 테스트: 카드 순서 기억하기 & 내 방 꾸미기</title>
+    
+    <!-- Firebase Direct Initialization -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyCQtbp9Y9ndMshXGwzIhfFTn6v0QP0Wn1I",
+          authDomain: "twin-cfeda.firebaseapp.com",
+          projectId: "twin-cfeda",
+          storageBucket: "twin-cfeda.firebasestorage.app",
+          messagingSenderId: "118157981165",
+          appId: "1:118157981165:web:d6c080fefaf3ecbda123e4",
+          measurementId: "G-1NQEECW7XQ"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = initializeFirestore(app, {
+          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+        });
+
+        function getOrCreateUserId() {
+            let userId = localStorage.getItem('common_user_id');
+            if (!userId) {
+                userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+                localStorage.setItem('common_user_id', userId);
+            }
+            return userId;
+        }
+
+        window.db = db;
+        window.userId = getOrCreateUserId();
+        window.fsDoc = doc;
+        window.fsSetDoc = setDoc;
+        window.fsGetDocs = getDocs;
+        window.fsQuery = query;
+        window.fsOrderBy = orderBy;
+        window.fsLimit = limit;
+    </script>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Canvas Confetti for Celebration -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {}
+            }
+        }
+    </script>
+    <style>
+        html, body {
+            height: 100%;
+            height: 100dvh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        body {
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #090d16;
+        }
+
+        /* 3D Card Flip styles */
+        .card-container {
+            perspective: 1000px;
+        }
+        .card-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+        .card-container.flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+        .card-front, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        }
+        .card-front {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            border: 2px solid #475569;
+        }
+        .card-back {
+            background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+            border: 2px solid #f472b6;
+            transform: rotateY(180deg);
+        }
+        .card-front:hover {
+            border-color: #f472b6;
+        }
+        .card-active {
+            box-shadow: 0 0 20px #ec4899;
+            border-color: #f472b6 !important;
+        }
+
+        /* Room Viewport Styling */
+        .room-viewport {
+            position: relative;
+            width: 100%;
+            height: 220px;
+            border-radius: 1.25rem;
+            overflow: hidden;
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 10px 20px rgba(0,0,0,0.4);
+            border: 2px solid #334155;
+            transition: all 0.3s ease;
+            touch-action: none;
+        }
+
+        .draggable-item {
+            position: absolute;
+            cursor: grab;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-drag: none;
+            will-change: transform;
+        }
+        .draggable-item:active {
+            cursor: grabbing;
+        }
+        .flipped-x {
+            transform: scaleX(-1);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="text-slate-100 flex justify-center items-center h-full h-[100dvh] fixed inset-0 sm:relative sm:p-4 overflow-hidden select-none">
+
+    <!-- Mobile Frame Outer Container -->
+    <div class="w-full max-w-md h-full sm:h-[840px] bg-slate-900 sm:rounded-3xl shadow-2xl border-0 sm:border-4 border-slate-800 flex flex-col overflow-hidden relative">
+
+        <!-- TOP BAR: Status, Hearts & Coins -->
+        <header class="bg-slate-950/90 backdrop-blur border-b border-slate-800 px-3 py-2.5 flex justify-between items-center z-20 shrink-0">
+            <!-- Stage Title / Logo -->
+            <div class="flex items-center space-x-2">
+                <button id="btn-home" onclick="navTo('home')" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition">
+                    <i class="fa-solid fa-house"></i>
+                </button>
+                <div>
+                    <h1 class="text-[10px] font-bold text-slate-400 tracking-wider">MEMORY TEST</h1>
+                    <div id="top-stage-indicator" class="text-xs font-extrabold text-pink-500">STAGE 1 - Lvl 1</div>
+                </div>
+            </div>
+
+            <!-- Heart / Life & Coin Indicator -->
+            <div class="flex items-center space-x-2">
+                <!-- Coins -->
+                <div onclick="navTo('room')" class="flex items-center bg-slate-900 border border-amber-500/40 px-2.5 py-1 rounded-full shadow-inner cursor-pointer hover:border-amber-400 transition">
+                    <i class="fa-solid fa-coins text-amber-400 text-xs mr-1.5 animate-pulse"></i>
+                    <span id="coin-count" class="font-black text-xs text-amber-300">0</span>
+                </div>
+
+                <!-- Hearts -->
+                <div class="flex items-center bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-full shadow-inner">
+                    <i class="fa-solid fa-heart text-red-500 text-xs mr-1 animate-pulse"></i>
+                    <span id="heart-count" class="font-black text-xs text-white">5</span>
+                    <span class="text-[10px] text-slate-500 font-bold ml-0.5">/5</span>
+                </div>
+
+                <!-- Heart Timer Badge in Header -->
+                <div id="heart-timer-badge" class="hidden text-[10px] bg-red-950/60 border border-red-800 text-red-400 px-2 py-1 rounded-md font-mono">
+                    <i class="fa-regular fa-clock mr-1"></i><span id="heart-timer-text">09:59</span>
+                </div>
+
+                <button onclick="openShopModal()" class="bg-gradient-to-r from-pink-500 to-violet-600 text-white w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-lg shadow-pink-500/30 hover:scale-105 active:scale-95 transition">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- MAIN VIEW AREA -->
+        <main class="flex-1 min-h-0 relative overflow-y-auto overflow-x-hidden flex flex-col bg-slate-950">
+
+            <!-- 1. HOME SCREEN -->
+            <section id="view-home" class="view-section flex-1 p-5 flex flex-col justify-between min-h-full">
+                <div class="flex flex-col items-center mt-2 text-center">
+                    <div class="w-16 h-16 bg-gradient-to-tr from-pink-500 to-violet-600 rounded-2xl flex items-center justify-center shadow-xl shadow-pink-500/20 mb-2.5 animate-bounce-short">
+                        <i class="fa-solid fa-brain text-3xl text-white"></i>
+                    </div>
+                    <h2 class="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-pink-400 via-purple-300 to-indigo-400">
+                        기억력 테스트
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
+                        뒤집히는 카드 순서를 완벽히 기억하세요! 클리어 코인으로 나만의 방을 예쁘게 꾸며보세요!
+                    </p>
+                </div>
+
+                <!-- Heart Status & Refill Card in Home Screen -->
+                <div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-800 p-3 rounded-2xl flex items-center justify-between my-1">
+                    <div class="flex items-center space-x-2.5">
+                        <div class="w-9 h-9 rounded-xl bg-red-950/80 border border-red-800/80 flex items-center justify-center text-red-400 text-base">
+                            <i class="fa-solid fa-heart"></i>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-extrabold text-white flex items-center space-x-1">
+                                <span>하트 보유량:</span>
+                                <span id="home-heart-display" class="text-pink-400 font-black">5개</span>
+                            </div>
+                            <div id="home-heart-timer-desc" class="text-[10px] text-slate-400 mt-0.5">
+                                하트가 가득 차 있습니다!
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="navTo('shop')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-pink-400 rounded-lg border border-slate-700">
+                        충전하기
+                    </button>
+                </div>
+
+                <!-- Stage Progress Overview Card -->
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl shadow-lg my-1">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-bold text-slate-400">최대 달성 단계</span>
+                        <span id="home-max-level-text" class="text-xs font-black text-pink-400">Level 1 / 50</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden p-0.5">
+                        <div id="home-progress-bar" class="bg-gradient-to-r from-pink-500 to-violet-500 h-full rounded-full transition-all duration-500" style="width: 2%;"></div>
+                    </div>
+                </div>
+
+                <!-- Mini Room Teaser Card -->
+                <div onclick="navTo('room')" class="bg-gradient-to-r from-slate-900 to-indigo-950 border border-indigo-900/60 p-3 rounded-2xl flex items-center justify-between cursor-pointer hover:border-pink-500/60 transition shadow-lg my-1">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-9 h-9 rounded-xl bg-indigo-900/60 border border-indigo-700/50 flex items-center justify-center text-indigo-300 text-base">
+                            <i class="fa-solid fa-couch"></i>
+                        </div>
+                        <div>
+                            <div class="font-extrabold text-xs text-white">내 방 꾸미기 <span class="text-amber-400 text-[10px] font-normal">코인 상점</span></div>
+                            <div class="text-[10px] text-slate-400">스테이지를 깨고 가구와 소품을 모으세요!</div>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-xs text-slate-500"></i>
+                </div>
+
+                <!-- Main Action Buttons -->
+                <div class="space-y-2 my-1">
+                    <button onclick="startContinueGame()" class="w-full py-3.5 bg-gradient-to-r from-pink-500 via-purple-600 to-violet-600 hover:from-pink-600 hover:to-violet-700 font-extrabold text-sm text-white rounded-2xl shadow-lg shadow-pink-500/25 active:scale-98 transition flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-play"></i>
+                        <span id="btn-play-text">이어서 도전하기 (Level 1)</span>
+                    </button>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="navTo('stages')" class="py-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 font-bold text-xs text-slate-200 rounded-xl active:scale-98 transition flex items-center justify-center space-x-1.5">
+                            <i class="fa-solid fa-cubes-stacked text-purple-400"></i>
+                            <span>스테이지 (1~50)</span>
+                        </button>
+                        <button onclick="navTo('ranking')" class="py-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 font-bold text-xs text-slate-200 rounded-xl active:scale-98 transition flex items-center justify-center space-x-1.5">
+                            <i class="fa-solid fa-trophy text-amber-400"></i>
+                            <span>랭킹 비교</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. STAGE SELECTION SCREEN (1~5 Stages / 50 Levels) -->
+            <section id="view-stages" class="view-section hidden flex-1 p-4 flex flex-col">
+                <div class="flex items-center justify-between mb-3 shrink-0">
+                    <h2 class="text-base font-bold flex items-center">
+                        <i class="fa-solid fa-layer-group text-pink-500 mr-2"></i> 스테이지 선택
+                    </h2>
+                    <span class="text-[10px] text-slate-400">총 50단계 구성</span>
+                </div>
+
+                <!-- Stage Tab Switcher (1~5) -->
+                <div id="stage-tabs-container" class="grid grid-cols-5 gap-1.5 bg-slate-900 p-1.5 rounded-xl border border-slate-800 mb-3 shrink-0">
+                    <!-- Dynamic tabs generated by JS -->
+                </div>
+
+                <!-- Level List inside Selected Stage -->
+                <div id="stage-info-banner" class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-800 p-3 rounded-xl mb-3 flex items-center justify-between shrink-0">
+                    <div>
+                        <div id="stage-banner-title" class="font-bold text-xs text-pink-400">Stage 1: 입문 (1~10단계)</div>
+                        <div id="stage-banner-desc" class="text-[10px] text-slate-400">4개 카드 (2x2) | 순서 3~5개</div>
+                    </div>
+                    <i id="stage-banner-icon" class="fa-solid fa-seedling text-xl text-pink-500"></i>
+                </div>
+
+                <!-- Level Grid (10 levels per stage) -->
+                <div id="level-grid-container" class="grid grid-cols-2 gap-2 flex-1 overflow-y-auto pr-1">
+                    <!-- Dynamic 10 Level Cards -->
+                </div>
+            </section>
+
+            <!-- 3. GAMEPLAY SCREEN -->
+            <section id="view-game" class="view-section hidden flex-1 p-4 flex flex-col justify-between items-center relative">
+                <!-- Status Top Banner -->
+                <div class="w-full flex justify-between items-center bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-2xl shrink-0">
+                    <div class="text-left">
+                        <div id="game-stage-text" class="text-[10px] text-slate-400 font-bold">STAGE 1</div>
+                        <div id="game-level-text" class="text-base font-black text-pink-400">Level 1</div>
+                    </div>
+                    <!-- Instruction Badge -->
+                    <div id="game-status-badge" class="px-3 py-1 bg-violet-950 text-violet-300 border border-violet-700 text-[10px] font-extrabold rounded-full animate-pulse">
+                        순서 관찰 중...
+                    </div>
+                </div>
+
+                <!-- Progress / Step Counter -->
+                <div class="w-full my-1 flex flex-col items-center shrink-0">
+                    <div class="text-[10px] text-slate-400 mb-1 flex items-center space-x-2">
+                        <span>기억할 카드 순서:</span>
+                        <span id="game-sequence-length-text" class="text-pink-400 font-bold text-xs">3개</span>
+                    </div>
+                    <!-- Sequence Progress Dots -->
+                    <div id="sequence-dots" class="flex flex-wrap justify-center gap-1 my-0.5 max-w-xs">
+                        <!-- Dots rendered via JS -->
+                    </div>
+                </div>
+
+                <!-- CARD GRID PLAY AREA -->
+                <div class="flex-1 w-full flex items-center justify-center py-1">
+                    <div id="card-grid" class="grid gap-2.5 w-full max-w-[310px] aspect-square transition-all duration-300">
+                        <!-- Cards dynamically rendered -->
+                    </div>
+                </div>
+
+                <!-- Bottom Helper controls -->
+                <div class="w-full flex justify-between items-center mt-1 shrink-0">
+                    <button onclick="giveUpGame()" class="px-3.5 py-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-[10px] font-bold transition">
+                        <i class="fa-solid fa-flag mr-1"></i> 포기하기
+                    </button>
+                    <div class="text-[10px] text-slate-500">
+                        * 반짝인 순서대로 카드를 터치하세요
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4. MY ROOM DECORATION VIEW ('내 방 꾸미기') -->
+            <section id="view-room" class="view-section hidden flex-1 p-4 flex flex-col">
+                <div class="flex items-center justify-between mb-1 shrink-0">
+                    <h2 class="text-base font-bold flex items-center">
+                        <i class="fa-solid fa-house-user text-indigo-400 mr-2"></i> 내 방 꾸미기
+                    </h2>
+                    <div class="flex items-center space-x-1 bg-amber-950/60 border border-amber-800/80 px-2.5 py-1 rounded-full text-xs font-bold text-amber-300">
+                        <i class="fa-solid fa-coins text-amber-400 mr-1"></i>
+                        <span id="room-coin-text">0</span>
+                    </div>
+                </div>
+                <!-- 설명 팁 -->
+                <div class="text-[10px] text-slate-400 mb-2 shrink-0">
+                    💡 가구 터치 시 상단 툴바 표시 (▲/▼: 순서 조절, 🔄: 반전, 🗑️: 삭제)
+                </div>
+
+                <!-- Interactive Live Room Preview Viewport -->
+                <div id="room-viewport" onclick="deselectRoomItems(event)" class="room-viewport mb-2.5 relative shrink-0">
+                    <!-- Wall Background layer -->
+                    <div id="room-wall-layer" class="absolute inset-0 bg-slate-800 transition-colors duration-500"></div>
+
+                    <!-- Floor Layer (Bottom 35%) -->
+                    <div id="room-floor-layer" class="absolute bottom-0 left-0 right-0 h-[35%] bg-slate-900 border-t-2 border-slate-700/50 transition-colors duration-500"></div>
+
+                    <!-- Room Elements Layer (Dynamic Multi Placement) -->
+                    <div id="room-elements-layer" class="relative z-10 w-full h-full">
+                        <!-- Dynamic Placed Items Layer -->
+                    </div>
+                </div>
+
+                <!-- Decoration Shop Category Selector -->
+                <div class="grid grid-cols-4 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 mb-2 text-[10px] font-bold text-center shrink-0">
+                    <button onclick="switchRoomCategory('wallpaper')" id="tab-r-wallpaper" class="room-tab py-1.5 rounded-lg bg-indigo-600 text-white">벽지/바닥</button>
+                    <button onclick="switchRoomCategory('furniture')" id="tab-r-furniture" class="room-tab py-1.5 rounded-lg text-slate-400 hover:text-white">가구</button>
+                    <button onclick="switchRoomCategory('accessory')" id="tab-r-accessory" class="room-tab py-1.5 rounded-lg text-slate-400 hover:text-white">소품</button>
+                    <button onclick="switchRoomCategory('pet')" id="tab-r-pet" class="room-tab py-1.5 rounded-lg text-slate-400 hover:text-white">반려동물</button>
+                </div>
+
+                <!-- Room Item Shop Grid -->
+                <div id="room-shop-grid" class="grid grid-cols-2 gap-2 flex-1 overflow-y-auto pr-1">
+                    <!-- Rendered by JS -->
+                </div>
+            </section>
+
+            <!-- 5. RANKING VIEW (유저 레벨 비교 랭킹) -->
+            <section id="view-ranking" class="view-section hidden flex-1 p-4 flex flex-col">
+                <div class="flex items-center justify-between mb-3 shrink-0">
+                    <h2 class="text-base font-bold flex items-center">
+                        <i class="fa-solid fa-trophy text-amber-400 mr-2"></i> 명예의 전당 (랭킹)
+                    </h2>
+                    <button onclick="editPlayerNickname()" class="text-[10px] text-pink-400 underline font-bold">
+                        <i class="fa-solid fa-pen mr-1"></i>닉네임 변경
+                    </button>
+                </div>
+
+                <!-- My Rank Summary Card -->
+                <div class="bg-gradient-to-r from-purple-950/80 to-slate-900 border border-purple-800/60 p-3 rounded-2xl flex items-center justify-between mb-3 shadow-lg shrink-0">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-full bg-purple-900 border border-purple-500 flex items-center justify-center text-amber-300 font-black text-sm">
+                            <span id="my-rank-number">#1</span>
+                        </div>
+                        <div>
+                            <div class="flex items-center space-x-1.5">
+                                <span id="my-rank-nickname" class="text-xs font-bold text-white">나 (도전자)</span>
+                                <span class="bg-pink-950 text-pink-400 border border-pink-800 text-[10px] px-1.5 py-0.2 rounded">나의 기록</span>
+                            </div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">최대 달성: <span id="my-rank-level" class="text-pink-400 font-extrabold">Level 1</span></div>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-medal text-2xl text-amber-400"></i>
+                </div>
+
+                <!-- Ranking List Table Header -->
+                <div class="text-[10px] font-bold text-slate-400 mb-1 px-2 flex justify-between shrink-0">
+                    <span>순위 / 플레이어</span>
+                    <span>클리어 레벨</span>
+                </div>
+
+                <!-- Leaderboard List -->
+                <div id="ranking-list-container" class="space-y-1.5 flex-1 overflow-y-auto pr-1">
+                    <!-- Dynamic ranking items generated by JS -->
+                </div>
+            </section>
+
+            <!-- 6. MISSION SCREEN (일일, 주간, 월간, 업적) -->
+            <section id="view-missions" class="view-section hidden flex-1 p-4 flex flex-col">
+                <div class="flex items-center justify-between mb-3 shrink-0">
+                    <h2 class="text-base font-bold flex items-center">
+                        <i class="fa-solid fa-scroll text-yellow-500 mr-2"></i> 미션 목록
+                    </h2>
+                </div>
+
+                <!-- Mission Category Tabs -->
+                <div class="grid grid-cols-4 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 mb-3 text-[10px] font-bold text-center shrink-0">
+                    <button onclick="switchMissionTab('daily')" id="tab-m-daily" class="mission-tab relative py-1.5 rounded-lg bg-pink-600 text-white flex items-center justify-center">
+                        <span>일일</span>
+                        <span id="badge-tab-daily" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 bg-yellow-400 border border-slate-900 rounded-full animate-ping"></span>
+                        <span id="badge-tab-daily-dot" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 bg-yellow-400 border border-slate-900 rounded-full"></span>
+                    </button>
+                    <button onclick="switchMissionTab('weekly')" id="tab-m-weekly" class="mission-tab relative py-1.5 rounded-lg text-slate-400 hover:text-white flex items-center justify-center">
+                        <span>주간</span>
+                        <span id="badge-tab-weekly-dot" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 bg-yellow-400 border border-slate-900 rounded-full"></span>
+                    </button>
+                    <button onclick="switchMissionTab('monthly')" id="tab-m-monthly" class="mission-tab relative py-1.5 rounded-lg text-slate-400 hover:text-white flex items-center justify-center">
+                        <span>월간</span>
+                        <span id="badge-tab-monthly-dot" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 bg-yellow-400 border border-slate-900 rounded-full"></span>
+                    </button>
+                    <button onclick="switchMissionTab('achievement')" id="tab-m-achievement" class="mission-tab relative py-1.5 rounded-lg text-slate-400 hover:text-white flex items-center justify-center">
+                        <span>업적</span>
+                        <span id="badge-tab-achievement-dot" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 bg-yellow-400 border border-slate-900 rounded-full"></span>
+                    </button>
+                </div>
+
+                <!-- Mission List Container -->
+                <div id="mission-list-container" class="space-y-2 flex-1 overflow-y-auto pr-1">
+                    <!-- Dynamically filled by JS -->
+                </div>
+            </section>
+
+            <!-- 7. SHOP & REFILL SCREEN -->
+            <section id="view-shop" class="view-section hidden flex-1 p-4 flex flex-col">
+                <div class="flex items-center justify-between mb-3 shrink-0">
+                    <h2 class="text-base font-bold flex items-center">
+                        <i class="fa-solid fa-store text-pink-500 mr-2"></i> 하트 & 코인 충전소
+                    </h2>
+                    <span class="text-[10px] text-slate-400">테스트용 충전소</span>
+                </div>
+
+                <div class="space-y-3 overflow-y-auto flex-1 pr-1">
+                    <!-- Heart Auto Refill Status Card in Shop -->
+                    <div class="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 rounded-full bg-red-950 border border-red-800 text-red-500 flex items-center justify-center shrink-0">
+                                <i class="fa-solid fa-heart-pulse text-base"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-xs font-bold text-white">10분 자동 충전</h4>
+                                <p id="shop-refill-timer-text" class="text-[10px] text-red-400 font-mono mt-0.5">다음 충전까지: 09:59</p>
+                            </div>
+                        </div>
+                        <span class="text-[10px] text-slate-400 font-bold bg-slate-800 px-2 py-1 rounded">10분당 +1개</span>
+                    </div>
+
+                    <!-- Free Ad Watch Section -->
+                    <div class="bg-gradient-to-r from-slate-900 to-indigo-950 border border-indigo-800/60 p-3.5 rounded-2xl flex items-center justify-between shadow-lg">
+                        <div class="space-y-1">
+                            <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">무료 보상</span>
+                            <h3 class="font-bold text-xs text-white flex items-center">
+                                <i class="fa-solid fa-tv text-indigo-400 mr-1.5"></i> 무료 광고 시청
+                            </h3>
+                            <p class="text-[10px] text-slate-400">테스트 영상(5초) 시청 시 하트 +1개 & 200코인</p>
+                        </div>
+                        <button onclick="watchRewardAd()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-[10px] rounded-xl shadow-md active:scale-95 transition flex items-center space-x-1 shrink-0">
+                            <span>광고 보기</span>
+                        </button>
+                    </div>
+
+                    <div class="text-[10px] font-bold text-slate-400 pt-1 border-t border-slate-800">
+                        <i class="fa-solid fa-vcard mr-1"></i> 테스트 결제 상품 (시뮬레이션)
+                    </div>
+
+                    <!-- Test In-App Purchase Options -->
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div onclick="testPurchase('heart_small', 5, 500, '1,200원')" class="bg-slate-900 border border-slate-800 hover:border-pink-500 p-3 rounded-2xl cursor-pointer transition flex flex-col justify-between items-center text-center group">
+                            <i class="fa-solid fa-heart text-xl text-red-500 mb-1.5 group-hover:scale-110 transition"></i>
+                            <div class="font-extrabold text-xs">하트 5개 + 500코인</div>
+                            <div class="text-[10px] text-slate-400 mb-2">1,200원</div>
+                            <span class="w-full py-1 bg-slate-800 group-hover:bg-pink-600 font-bold text-[10px] rounded-lg transition">테스트 구매</span>
+                        </div>
+                        <div onclick="testPurchase('heart_large', 20, 2500, '3,900원')" class="bg-slate-900 border border-slate-800 hover:border-purple-500 p-3 rounded-2xl cursor-pointer transition flex flex-col justify-between items-center text-center group">
+                            <i class="fa-solid fa-box-archive text-xl text-purple-400 mb-1.5 group-hover:scale-110 transition"></i>
+                            <div class="font-extrabold text-xs">하트 20개 + 2,500코인</div>
+                            <div class="text-[10px] text-slate-400 mb-2">3,900원</div>
+                            <span class="w-full py-1 bg-slate-800 group-hover:bg-purple-600 font-bold text-[10px] rounded-lg transition">테스트 구매</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- BOTTOM NAVIGATION BAR (6 Tabs) -->
+        <nav class="bg-slate-950 border-t border-slate-800 grid grid-cols-6 py-2 px-1 z-20 shrink-0 text-center pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+            <button onclick="navTo('home')" id="nav-home" class="nav-btn flex flex-col items-center text-pink-500">
+                <i class="fa-solid fa-house text-sm"></i>
+                <span class="text-[10px] font-bold mt-1">홈</span>
+            </button>
+            <button onclick="navTo('stages')" id="nav-stages" class="nav-btn flex flex-col items-center text-slate-500 hover:text-slate-300">
+                <i class="fa-solid fa-map-location-dot text-sm"></i>
+                <span class="text-[10px] font-bold mt-1">단계</span>
+            </button>
+            <button onclick="navTo('ranking')" id="nav-ranking" class="nav-btn flex flex-col items-center text-slate-500 hover:text-slate-300">
+                <i class="fa-solid fa-trophy text-sm"></i>
+                <span class="text-[10px] font-bold mt-1">랭킹</span>
+            </button>
+            <button onclick="navTo('room')" id="nav-room" class="nav-btn flex flex-col items-center text-slate-500 hover:text-slate-300">
+                <i class="fa-solid fa-couch text-sm"></i>
+                <span class="text-[10px] font-bold mt-1">내방</span>
+            </button>
+            <button onclick="navTo('missions')" id="nav-missions" class="nav-btn flex flex-col items-center text-slate-500 hover:text-slate-300 relative">
+                <i class="fa-solid fa-scroll text-sm"></i>
+                <span id="mission-badge-dot" class="hidden absolute top-0 right-2 w-2 h-2 bg-yellow-500 rounded-full animate-ping"></span>
+                <span id="mission-badge-dot-static" class="hidden absolute top-0 right-2 w-2 h-2 bg-yellow-500 rounded-full"></span>
+                <span class="text-[10px] font-bold mt-1">미션</span>
+            </button>
+            <button onclick="navTo('shop')" id="nav-shop" class="nav-btn flex flex-col items-center text-slate-500 hover:text-slate-300">
+                <i class="fa-solid fa-store text-sm"></i>
+                <span class="text-[10px] font-bold mt-1">충전소</span>
+            </button>
+        </nav>
+
+        <!-- MODALS -->
+        <div id="modal-clear" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 w-full max-w-xs rounded-3xl p-5 text-center shadow-2xl flex flex-col items-center animate-bounce-short">
+                <div class="w-16 h-16 bg-green-500/20 border-2 border-green-500 rounded-full flex items-center justify-center text-green-400 text-2xl mb-2">
+                    <i class="fa-solid fa-trophy"></i>
+                </div>
+                <h3 class="text-xl font-black text-white">STAGE CLEAR!</h3>
+                <p id="clear-modal-subtitle" class="text-[10px] text-slate-400 mt-1 mb-3">Level 1을 성공적으로 정복했습니다!</p>
+
+                <div class="w-full bg-slate-950 border border-slate-800 p-3 rounded-2xl mb-4 space-y-1">
+                    <div class="flex justify-between text-xs text-slate-400">
+                        <span>클리어 보상 코인:</span>
+                        <span id="clear-modal-coins" class="text-amber-400 font-extrabold flex items-center">
+                            <i class="fa-solid fa-coins mr-1"></i> +100 Coins
+                        </span>
+                    </div>
+                    <div class="flex justify-between text-xs text-slate-400">
+                        <span>암기 카드 개수:</span>
+                        <span id="clear-modal-count" class="text-pink-400 font-bold">3개 완료</span>
+                    </div>
+                </div>
+
+                <div class="space-y-2 w-full">
+                    <button id="btn-next-level" onclick="nextLevelAction()" class="w-full py-3 bg-gradient-to-r from-pink-500 to-violet-600 font-extrabold text-xs text-white rounded-xl shadow-lg active:scale-95 transition">
+                        다음 단계 도전하기
+                    </button>
+                    <button onclick="stopAndQuitAction('stages')" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[10px] rounded-xl transition">
+                        <i class="fa-solid fa-list-check mr-1"></i> 중단하고 스테이지 목록으로
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-fail" class="hidden absolute inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 w-full max-w-xs rounded-3xl p-5 text-center shadow-2xl flex flex-col items-center">
+                <div class="w-16 h-16 bg-red-500/20 border-2 border-red-500 rounded-full flex items-center justify-center text-red-500 text-2xl mb-2 animate-shake">
+                    <i class="fa-solid fa-xmark"></i>
+                </div>
+                <h3 class="text-xl font-black text-white">기억 실패!</h3>
+                <p class="text-[10px] text-slate-400 mt-1 mb-2">순서가 틀렸습니다. 하트 1개가 차감됩니다.</p>
+
+                <div class="flex items-center space-x-2 bg-red-950/40 border border-red-900 px-3 py-1 rounded-full mb-4 text-xs text-red-300 font-bold">
+                    <i class="fa-solid fa-heart text-red-500"></i>
+                    <span>남은 하트: <span id="fail-remaining-hearts">4</span>개</span>
+                </div>
+
+                <div class="space-y-2 w-full">
+                    <button onclick="retryLevelAction()" class="w-full py-2.5 bg-pink-600 hover:bg-pink-500 font-extrabold text-xs text-white rounded-xl shadow-lg active:scale-95 transition">
+                        다시 도전
+                    </button>
+                    <button onclick="stopAndQuitAction('stages')" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[10px] rounded-xl transition">
+                        <i class="fa-solid fa-arrow-left mr-1"></i> 중단하고 단계 목록으로
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-giveup" class="hidden absolute inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 w-full max-w-xs rounded-3xl p-5 text-center shadow-2xl flex flex-col items-center animate-bounce-short">
+                <div class="w-14 h-14 bg-amber-950 border border-amber-800 rounded-full flex items-center justify-center text-amber-500 text-xl mb-2">
+                    <i class="fa-solid fa-flag"></i>
+                </div>
+                <h3 class="text-lg font-bold text-white">게임을 포기하시겠습니까?</h3>
+                <p class="text-[10px] text-slate-400 mt-1 mb-4">포기 시 실패 처리되며 하트 1개가 차감됩니다.</p>
+                <div class="space-y-2 w-full">
+                    <button onclick="confirmGiveUpAction()" class="w-full py-2.5 bg-red-600 hover:bg-red-500 font-extrabold text-xs text-white rounded-xl shadow-lg active:scale-95 transition">
+                        포기하고 하트 차감하기
+                    </button>
+                    <button onclick="closeModal('modal-giveup')" class="w-full py-2 bg-slate-800 text-slate-300 font-bold text-[10px] rounded-xl transition">
+                        계속 플레이하기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-purchase" class="hidden absolute inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 w-full max-w-xs rounded-3xl p-5 text-center shadow-2xl flex flex-col items-center">
+                <div class="w-14 h-14 bg-purple-950 border border-purple-800 rounded-full flex items-center justify-center text-purple-400 text-xl mb-2">
+                    <i class="fa-solid fa-cart-shopping"></i>
+                </div>
+                <h3 class="text-lg font-bold text-white mb-2">테스트 결제 확인</h3>
+                <p id="purchase-modal-desc" class="text-[10px] text-slate-300 bg-slate-950 p-3 border border-slate-800 rounded-xl mb-4 whitespace-pre-line text-left leading-relaxed"></p>
+                <div class="space-y-2 w-full">
+                    <button onclick="confirmTestPurchase()" class="w-full py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 font-extrabold text-xs text-white rounded-xl shadow-lg active:scale-95 transition">
+                        테스트 결제 진행
+                    </button>
+                    <button onclick="closeModal('modal-purchase')" class="w-full py-2 bg-slate-800 text-slate-300 font-bold text-[10px] rounded-xl transition">
+                        취소
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-alert" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 w-full max-w-xs rounded-3xl p-5 text-center shadow-2xl flex flex-col items-center">
+                <div class="w-12 h-12 bg-pink-950 border border-pink-800 rounded-full flex items-center justify-center text-pink-400 text-xl mb-2">
+                    <i id="alert-icon" class="fa-solid fa-circle-info"></i>
+                </div>
+                <p id="alert-message-text" class="text-xs text-slate-200 font-bold mb-4 leading-relaxed"></p>
+                <button onclick="closeModal('modal-alert')" class="w-full py-2 bg-pink-600 hover:bg-pink-500 font-extrabold text-xs text-white rounded-xl transition">
+                    확인
+                </button>
+            </div>
+        </div>
+
+        <div id="modal-ad" class="hidden absolute inset-0 bg-black z-50 flex flex-col justify-between p-6">
+            <div class="flex justify-between items-center">
+                <span class="bg-slate-800 text-[10px] px-2 py-1 rounded text-slate-400 font-mono">광고 시뮬레이션</span>
+                <span id="ad-timer" class="text-[10px] font-bold text-pink-400 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">5초 후 보상...</span>
+            </div>
+            <div class="flex flex-col items-center text-center my-auto">
+                <i class="fa-solid fa-gamepad text-5xl text-violet-500 mb-3 animate-bounce"></i>
+                <h3 class="text-lg font-bold text-white mb-1">재미있는 신작 모바일 게임!</h3>
+                <p class="text-[10px] text-slate-400 max-w-xs">테스트용 보상형 광고 재생 중입니다. 잠시만 기다려 주세요.</p>
+            </div>
+            <button id="btn-close-ad" disabled onclick="finishRewardAd()" class="w-full py-3 bg-slate-800 text-slate-500 font-bold rounded-xl transition">
+                보상 수령하고 닫기
+            </button>
+        </div>
+
+        <div id="modal-no-heart" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 w-full max-w-xs rounded-3xl p-5 text-center shadow-2xl flex flex-col items-center">
+                <div class="w-14 h-14 bg-red-950 border border-red-800 rounded-full flex items-center justify-center text-red-500 text-xl mb-2">
+                    <i class="fa-solid fa-heart-crack"></i>
+                </div>
+                <h3 class="text-lg font-bold text-white">하트가 부족합니다!</h3>
+                <p class="text-[10px] text-slate-400 mt-1 mb-4">광고를 보고 무료 충전하거나 충전소를 이용해 보세요!</p>
+
+                <div class="space-y-2 w-full">
+                    <button onclick="closeModal('modal-no-heart'); watchRewardAd();" class="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 font-extrabold text-[10px] text-white rounded-xl shadow-lg transition flex items-center justify-center space-x-1">
+                        <i class="fa-solid fa-tv mr-1"></i>
+                        <span>광고 보고 하트 +1 받기</span>
+                    </button>
+                    <button onclick="closeModal('modal-no-heart'); navTo('shop');" class="w-full py-2 bg-slate-800 text-slate-300 font-bold text-[10px] rounded-xl transition">
+                        충전소 이동하기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        const MAX_HEARTS = 5;
+        const REFILL_INTERVAL_SEC = 600;
+
+        const STAGE_CONFIGS = [
+            { stage: 1, range: [1, 10], cols: 2, rows: 2, count: 4, seqBase: 3, name: "Stage 1: 입문", icon: "fa-seedling", desc: "4개 카드 (2x2) | 순서 3~5개", coinBonus: 100 },
+            { stage: 2, range: [11, 20], cols: 3, rows: 2, count: 6, seqBase: 4, name: "Stage 2: 초급", icon: "fa-leaf", desc: "6개 카드 (2x3) | 순서 4~7개", coinBonus: 130 },
+            { stage: 3, range: [21, 30], cols: 3, rows: 3, count: 9, seqBase: 5, name: "Stage 3: 중급", icon: "fa-tree", desc: "9개 카드 (3x3) | 순서 5~9개", coinBonus: 160 },
+            { stage: 4, range: [31, 40], cols: 4, rows: 3, count: 12, seqBase: 6, name: "Stage 4: 상급", icon: "fa-fire", desc: "12개 카드 (3x4) | 순서 6~11개", coinBonus: 200 },
+            { stage: 5, range: [41, 50], cols: 4, rows: 4, count: 16, seqBase: 7, name: "Stage 5: 마스터", icon: "fa-crown", desc: "16개 카드 (4x4) | 순서 7~15개", coinBonus: 250 }
+        ];
+
+        const ROOM_ITEMS_CATALOG = [
+            { id: 'wp_cozy', category: 'wallpaper', name: '아늑한 핑크 방', price: 0, wallBg: '#3b0764', floorBg: '#581c87', default: true },
+            { id: 'wp_sky', category: 'wallpaper', name: '스카이 블루', price: 200, wallBg: '#0f172a', floorBg: '#1e293b' },
+            { id: 'wp_emerald', category: 'wallpaper', name: '에메랄드 포레스트', price: 300, wallBg: '#064e3b', floorBg: '#022c22' },
+            { id: 'wp_sunset', category: 'wallpaper', name: '네온 선셋 방', price: 400, wallBg: '#831843', floorBg: '#500724' },
+            { id: 'wp_modern_gray', category: 'wallpaper', name: '모던 시크 그레이', price: 450, wallBg: '#18181b', floorBg: '#27272a' },
+            { id: 'wp_lavender', category: 'wallpaper', name: '라벤더 드림', price: 500, wallBg: '#4c1d95', floorBg: '#3b0764' },
+            { id: 'wp_warm_wood', category: 'wallpaper', name: '따뜻한 오크 우드', price: 600, wallBg: '#451a03', floorBg: '#78350f' },
+            { id: 'wp_midnight', category: 'wallpaper', name: '미드나잇 유성우', price: 750, wallBg: '#020617', floorBg: '#0f172a' },
+
+            { id: 'fn_bunk_bed', category: 'furniture', name: '2층 침대', price: 300, img: 'images/g1_img/bunk_bed.png' },
+            { id: 'fn_basic_bed', category: 'furniture', name: '기본 침대', price: 300, img: 'images/g1_img/basic_bed.png' },
+            { id: 'fn_cozy_sofa', category: 'furniture', name: '푹신한 카우치', price: 350, img: 'images/g1_img/white_sofa_1.png' },
+            { id: 'fn_wood_desk', category: 'furniture', name: '원목 책상', price: 500, img: 'images/g1_img/wood_desk.png' },
+            { id: 'fn_pc_desk', category: 'furniture', name: '컴퓨터 책상', price: 500, img: 'images/g1_img/pc_desk.png' },
+            { id: 'fn_bookshelf', category: 'furniture', name: '원목 책장', price: 600, img: 'images/g1_img/bookshelf.png' },
+
+            { id: 'ac_plant', category: 'accessory', name: '공기정화 화분', price: 150, img: 'images/g1_img/plant_1.png' },
+            { id: 'ac_bear', category: 'accessory', name: '귀여운 곰인형', price: 250, img: 'images/g1_img/teddy.png' },
+            { id: 'ac_wall_frame', category: 'accessory', name: '벽걸이 그림', price: 300, img: 'images/g1_img/picture_1.png' },
+            { id: 'ac_neon_lamp', category: 'accessory', name: '스탠드 무드등', price: 400, img: 'images/g1_img/floor_lamp.png' },
+
+            { id: 'pet_cat', category: 'pet', name: '아기 고양이', price: 400, icon: 'fa-cat' },
+            { id: 'pet_dog', category: 'pet', name: '귀여운 강아지', price: 450, icon: 'fa-dog' },
+            { id: 'pet_dragon', category: 'pet', name: '아기 드래곤', price: 800, icon: 'fa-dragon' }
+        ];
+
+        const DEFAULT_MISSIONS = {
+            daily: [
+                { id: 'd1', title: '게임 3회 도전하기', target: 3, progress: 0, rewardHearts: 1, rewardCoins: 100, claimed: false },
+                { id: 'd2', title: '카드 15회 클릭하기', target: 15, progress: 0, rewardHearts: 1, rewardCoins: 100, claimed: false },
+                { id: 'd3', title: '아무 단계 1회 클리어', target: 1, progress: 0, rewardHearts: 1, rewardCoins: 150, claimed: false }
+            ],
+            weekly: [
+                { id: 'w1', title: '총 10개 단계 성공하기', target: 10, progress: 0, rewardHearts: 2, rewardCoins: 300, claimed: false },
+                { id: 'w2', title: 'Stage 2 이상에서 성공 3회', target: 3, progress: 0, rewardHearts: 2, rewardCoins: 300, claimed: false },
+                { id: 'w3', title: '광고 시청 2회 수행', target: 2, progress: 0, rewardHearts: 1, rewardCoins: 200, claimed: false }
+            ],
+            monthly: [
+                { id: 'm1', title: '총 30개 단계 성공하기', target: 30, progress: 0, rewardHearts: 3, rewardCoins: 500, claimed: false },
+                { id: 'm2', title: 'Stage 3 이상 도달하기', target: 1, progress: 0, rewardHearts: 3, rewardCoins: 500, claimed: false }
+            ],
+            achievement: [
+                { id: 'a1', title: '첫 단계 클리어 달성', target: 1, progress: 0, rewardHearts: 2, rewardCoins: 200, claimed: false },
+                { id: 'a2', title: '10단계 (Stage 1 완주) 돌파', target: 1, progress: 0, rewardHearts: 3, rewardCoins: 500, claimed: false },
+                { id: 'a3', title: '25단계 돌파', target: 1, progress: 0, rewardHearts: 4, rewardCoins: 800, claimed: false },
+                { id: 'a4', title: '마스터 50단계 최종 클리어!', target: 1, progress: 0, rewardHearts: 5, rewardCoins: 1500, claimed: false }
+            ]
+        };
+
+        let gameState = {
+            nickname: '플레이어',
+            maxUnlockedLevel: 1,
+            hearts: 5,
+            coins: 100,
+            lastRefillTime: Date.now(),
+            inventory: ['wp_cozy'],
+            equippedRoom: {
+                wallpaper: 'wp_cozy',
+                placedItems: []
+            },
+            missions: JSON.parse(JSON.stringify(DEFAULT_MISSIONS)),
+            stats: {
+                totalPlayed: 0,
+                cardsClicked: 0,
+                stage2Clears: 0,
+                adsWatched: 0
+            }
+        };
+
+        let currentActiveStageTab = 1;
+        let currentRoomCategory = 'wallpaper';
+        let currentMissionTab = 'daily';
+        let currentGameLevel = 1;
+        let generatedSequence = [];
+        let userClickIndex = 0;
+        let isUserTurn = false;
+        let isShowingPattern = false;
+        let pendingPurchaseInfo = null;
+        let heartbeatInterval = null;
+        let selectedInstanceId = null;
+
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function playSound(type) {
+            try {
+                if (!audioCtx) audioCtx = new AudioContext();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                const now = audioCtx.currentTime;
+
+                if (type === 'flip') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(320, now);
+                    osc.frequency.exponentialRampToValueAtTime(640, now + 0.08);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                } else if (type === 'success') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(523.25, now);
+                    osc.frequency.setValueAtTime(659.25, now + 0.1);
+                    osc.frequency.setValueAtTime(783.99, now + 0.2);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                    osc.start(now);
+                    osc.stop(now + 0.4);
+                } else if (type === 'fail') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(220, now);
+                    osc.frequency.exponentialRampToValueAtTime(110, now + 0.25);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                } else if (type === 'click') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(450, now);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.04);
+                    osc.start(now);
+                    osc.stop(now + 0.04);
+                }
+            } catch (e) {}
+        }
+
+        async function syncGame1ToFirebase() {
+            if (!window.db) return;
+            const syncData = {
+                userId: window.userId,
+                game1_nickname: gameState.nickname,
+                game1_maxLevel: gameState.maxUnlockedLevel,
+                game1_updatedAt: Date.now()
+            };
+            
+            try {
+                const userRef = window.fsDoc(window.db, "rankings", window.userId);
+                await window.fsSetDoc(userRef, syncData, { merge: true });
+                console.log("[Game1] Firebase 동기화 성공!");
+            } catch (e) {
+                console.warn("[Game1] Firebase 전송 실패:", e);
+            }
+        }
+
+        function loadSavedData() {
+            const saved = localStorage.getItem('memo_game_data');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    gameState.nickname = parsed.nickname || '플레이어';
+                    gameState.maxUnlockedLevel = parsed.maxUnlockedLevel || 1;
+                    gameState.hearts = typeof parsed.hearts === 'number' ? parsed.hearts : 5;
+                    gameState.coins = typeof parsed.coins === 'number' ? parsed.coins : 100;
+                    gameState.lastRefillTime = parsed.lastRefillTime || Date.now();
+                    if (parsed.inventory) gameState.inventory = parsed.inventory;
+                    
+                    if (parsed.equippedRoom) {
+                        gameState.equippedRoom.wallpaper = parsed.equippedRoom.wallpaper || 'wp_cozy';
+                        if (Array.isArray(parsed.equippedRoom.placedItems)) {
+                            gameState.equippedRoom.placedItems = parsed.equippedRoom.placedItems;
+                        }
+                    }
+                    if (parsed.missions) gameState.missions = parsed.missions;
+                    if (parsed.stats) gameState.stats = parsed.stats;
+                } catch(e) {
+                    console.error("Failed loading state", e);
+                }
+            }
+            calculateOfflineHearts();
+            saveData();
+            updateUI();
+        }
+
+        function saveData() {
+            localStorage.setItem('memo_game_data', JSON.stringify(gameState));
+        }
+
+        function calculateOfflineHearts() {
+            if (gameState.hearts >= MAX_HEARTS) {
+                gameState.lastRefillTime = Date.now();
+                return;
+            }
+
+            const now = Date.now();
+            const elapsedSec = Math.floor((now - gameState.lastRefillTime) / 1000);
+
+            if (elapsedSec >= REFILL_INTERVAL_SEC) {
+                const addHearts = Math.floor(elapsedSec / REFILL_INTERVAL_SEC);
+                const remainderSec = elapsedSec % REFILL_INTERVAL_SEC;
+
+                gameState.hearts = Math.min(MAX_HEARTS, gameState.hearts + addHearts);
+                
+                if (gameState.hearts >= MAX_HEARTS) {
+                    gameState.lastRefillTime = now;
+                } else {
+                    gameState.lastRefillTime = now - (remainderSec * 1000);
+                }
+            }
+        }
+
+        function startHeartbeatTimer() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            heartbeatInterval = setInterval(() => {
+                const now = Date.now();
+
+                if (gameState.hearts >= MAX_HEARTS) {
+                    gameState.lastRefillTime = now;
+                    updateHeartTimerUI(null);
+                    return;
+                }
+
+                const elapsedSec = Math.floor((now - gameState.lastRefillTime) / 1000);
+                const remainingSec = REFILL_INTERVAL_SEC - elapsedSec;
+
+                if (remainingSec <= 0) {
+                    gameState.hearts += 1;
+                    gameState.lastRefillTime = now;
+                    saveData();
+                    updateUI();
+                } else {
+                    updateHeartTimerUI(remainingSec);
+                }
+            }, 1000);
+        }
+
+        function updateHeartTimerUI(remainingSec) {
+            const badgeEl = document.getElementById('heart-timer-badge');
+            const headerTextEl = document.getElementById('heart-timer-text');
+            const homeTimerDescEl = document.getElementById('home-heart-timer-desc');
+            const shopRefillTimerEl = document.getElementById('shop-refill-timer-text');
+
+            if (remainingSec === null || gameState.hearts >= MAX_HEARTS) {
+                badgeEl.classList.add('hidden');
+                if (homeTimerDescEl) homeTimerDescEl.textContent = "하트가 가득 차 있습니다! (10분 충전 정지)";
+                if (shopRefillTimerEl) shopRefillTimerEl.textContent = "하트 최대 수량 유지 중";
+            } else {
+                badgeEl.classList.remove('hidden');
+                const m = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+                const s = String(remainingSec % 60).padStart(2, '0');
+                const timeStr = `${m}:${s}`;
+
+                if (headerTextEl) headerTextEl.textContent = timeStr;
+                if (homeTimerDescEl) homeTimerDescEl.textContent = `다음 충전까지: ${timeStr}`;
+                if (shopRefillTimerEl) shopRefillTimerEl.textContent = `다음 충전까지: ${timeStr}`;
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('coin-count').textContent = gameState.coins;
+            document.getElementById('room-coin-text').textContent = gameState.coins;
+            document.getElementById('heart-count').textContent = gameState.hearts;
+            document.getElementById('home-heart-display').textContent = `${gameState.hearts}개`;
+
+            document.getElementById('top-stage-indicator').textContent = `STAGE ${getStageFromLevel(gameState.maxUnlockedLevel)} - Lvl ${gameState.maxUnlockedLevel}`;
+            
+            document.getElementById('home-max-level-text').textContent = `Level ${gameState.maxUnlockedLevel} / 50`;
+            document.getElementById('btn-play-text').textContent = `이어서 도전하기 (Level ${gameState.maxUnlockedLevel})`;
+
+            const pct = Math.min(100, Math.max(2, (gameState.maxUnlockedLevel / 50) * 100));
+            document.getElementById('home-progress-bar').style.width = `${pct}%`;
+
+            checkMissionBadge();
+            renderEquippedRoom();
+        }
+
+        function getStageConfig(stageNum) {
+            return STAGE_CONFIGS.find(s => s.stage === stageNum) || STAGE_CONFIGS[0];
+        }
+
+        function getStageFromLevel(level) {
+            if (level <= 10) return 1;
+            if (level <= 20) return 2;
+            if (level <= 30) return 3;
+            if (level <= 40) return 4;
+            return 5;
+        }
+
+        function navTo(viewName) {
+            playSound('click');
+            const sections = document.querySelectorAll('.view-section');
+            sections.forEach(sec => sec.classList.add('hidden'));
+
+            const target = document.getElementById(`view-${viewName}`);
+            if (target) target.classList.remove('hidden');
+
+            const navBtns = document.querySelectorAll('.nav-btn');
+            navBtns.forEach(btn => {
+                btn.classList.remove('text-pink-500');
+                btn.classList.add('text-slate-500');
+            });
+            const activeBtn = document.getElementById(`nav-${viewName}`);
+            if (activeBtn) {
+                activeBtn.classList.remove('text-slate-500');
+                activeBtn.classList.add('text-pink-500');
+            }
+
+            if (viewName === 'stages') {
+                currentActiveStageTab = getStageFromLevel(gameState.maxUnlockedLevel);
+                renderStageView();
+            }
+            if (viewName === 'room') renderRoomShopGrid();
+            if (viewName === 'ranking') renderRankingList();
+            if (viewName === 'missions') renderMissionList();
+        }
+
+        function renderStageView() {
+            const tabsContainer = document.getElementById('stage-tabs-container');
+            tabsContainer.innerHTML = '';
+
+            for (let i = 1; i <= 5; i++) {
+                const isSelected = i === currentActiveStageTab;
+                const tabBtn = document.createElement('button');
+                tabBtn.className = `py-1.5 rounded-lg text-[10px] font-bold transition ${isSelected ? 'bg-pink-600 text-white shadow' : 'text-slate-400 hover:text-white'}`;
+                tabBtn.textContent = `Stage ${i}`;
+                tabBtn.onclick = () => {
+                    currentActiveStageTab = i;
+                    renderStageView();
+                };
+                tabsContainer.appendChild(tabBtn);
+            }
+
+            const config = getStageConfig(currentActiveStageTab);
+            document.getElementById('stage-banner-title').textContent = `${config.name} (${config.range[0]}~${config.range[1]}단계)`;
+            document.getElementById('stage-banner-desc').textContent = config.desc;
+            document.getElementById('stage-banner-icon').className = `fa-solid ${config.icon} text-xl text-pink-500`;
+
+            const gridContainer = document.getElementById('level-grid-container');
+            gridContainer.innerHTML = '';
+
+            for (let lvl = config.range[0]; lvl <= config.range[1]; lvl++) {
+                const isUnlocked = lvl <= gameState.maxUnlockedLevel;
+                const isCleared = lvl < gameState.maxUnlockedLevel;
+                const isCurrent = lvl === gameState.maxUnlockedLevel;
+
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-2xl border transition flex flex-col justify-between cursor-pointer ${
+                    isCurrent ? 'bg-gradient-to-tr from-pink-950 to-purple-900 border-pink-500 shadow-lg shadow-pink-500/20' :
+                    isCleared ? 'bg-slate-900 border-slate-800 hover:border-slate-700' :
+                    'bg-slate-950 border-slate-900 opacity-50 cursor-not-allowed'
+                }`;
+
+                card.onclick = () => {
+                    if (isUnlocked) {
+                        startSpecificLevel(lvl);
+                    } else {
+                        showAlert('이전 단계를 먼저 클리어해야 도전할 수 있습니다!');
+                    }
+                };
+
+                const sequenceLen = getSequenceLengthForLevel(lvl);
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-black ${isCurrent ? 'text-pink-400' : isCleared ? 'text-slate-300' : 'text-slate-600'}">Lvl ${lvl}</span>
+                        ${isCleared ? '<i class="fa-solid fa-circle-check text-green-500 text-xs"></i>' :
+                          isCurrent ? '<span class="bg-pink-500 text-white text-[10px] px-1.5 py-0.5 rounded font-extrabold">도전 중</span>' :
+                          '<i class="fa-solid fa-lock text-slate-700 text-xs"></i>'}
+                    </div>
+                    <div class="text-[10px] text-slate-400">
+                        순서: <span class="font-bold text-pink-300">${sequenceLen}개</span>
+                    </div>
+                `;
+
+                gridContainer.appendChild(card);
+            }
+        }
+
+        function getSequenceLengthForLevel(lvl) {
+            const config = getStageConfig(getStageFromLevel(lvl));
+            const levelInStage = (lvl - 1) % 10;
+            return config.seqBase + Math.floor(levelInStage / 2.5);
+        }
+
+        function startContinueGame() {
+            startSpecificLevel(gameState.maxUnlockedLevel);
+        }
+
+        function startSpecificLevel(lvl) {
+            if (gameState.hearts <= 0) {
+                document.getElementById('modal-no-heart').classList.remove('hidden');
+                return;
+            }
+
+            currentGameLevel = lvl;
+            const stageNum = getStageFromLevel(lvl);
+            const config = getStageConfig(stageNum);
+
+            gameState.stats.totalPlayed++;
+            updateMissionProgress('d1', 1);
+            saveData();
+
+            document.getElementById('game-stage-text').textContent = config.name.toUpperCase();
+            document.getElementById('game-level-text').textContent = `Level ${lvl}`;
+            
+            const seqLen = getSequenceLengthForLevel(lvl);
+            document.getElementById('game-sequence-length-text').textContent = `${seqLen}개`;
+
+            const dotsContainer = document.getElementById('sequence-dots');
+            dotsContainer.innerHTML = '';
+            for (let i = 0; i < seqLen; i++) {
+                const dot = document.createElement('div');
+                dot.id = `seq-dot-${i}`;
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-800 border border-slate-700 transition-all';
+                dotsContainer.appendChild(dot);
+            }
+
+            renderCardGrid(config);
+
+            generatedSequence = [];
+            for (let i = 0; i < seqLen; i++) {
+                const randomIndex = Math.floor(Math.random() * config.count);
+                generatedSequence.push(randomIndex);
+            }
+
+            userClickIndex = 0;
+            isUserTurn = false;
+
+            navTo('game');
+
+            setTimeout(() => {
+                playSequencePattern();
+            }, 600);
+        }
+
+        function renderCardGrid(config) {
+            const gridEl = document.getElementById('card-grid');
+            gridEl.className = `grid gap-2.5 w-full max-w-[310px] aspect-square transition-all duration-300 grid-cols-${config.cols}`;
+            gridEl.innerHTML = '';
+
+            const icons = ['fa-star', 'fa-heart', 'fa-bolt', 'fa-gem', 'fa-moon', 'fa-sun', 'fa-fire', 'fa-snowflake', 'fa-ghost', 'fa-crown', 'fa-shield-halved', 'fa-key', 'fa-bell', 'fa-anchor', 'fa-clover', 'fa-eye'];
+
+            for (let i = 0; i < config.count; i++) {
+                const icon = icons[i % icons.length];
+                const card = document.createElement('div');
+                card.className = 'card-container w-full h-full cursor-pointer';
+                card.id = `card-${i}`;
+
+                card.innerHTML = `
+                    <div class="card-inner">
+                        <div class="card-front">
+                            <i class="fa-solid fa-brain text-slate-600 text-lg sm:text-xl"></i>
+                        </div>
+                        <div class="card-back">
+                            <i class="fa-solid ${icon} text-white text-xl sm:text-2xl"></i>
+                        </div>
+                    </div>
+                `;
+
+                card.onclick = () => handleCardClick(i);
+                gridEl.appendChild(card);
+            }
+        }
+
+        function playSequencePattern() {
+            isShowingPattern = true;
+            isUserTurn = false;
+
+            const badge = document.getElementById('game-status-badge');
+            badge.textContent = "순서 관찰 중...";
+            badge.className = "px-3 py-1 bg-violet-950 text-violet-300 border border-violet-700 text-[10px] font-extrabold rounded-full animate-pulse";
+
+            let step = 0;
+            const speed = Math.max(350, 700 - (currentGameLevel * 6));
+
+            const timer = setInterval(() => {
+                if (step >= generatedSequence.length) {
+                    clearInterval(timer);
+                    isShowingPattern = false;
+                    isUserTurn = true;
+                    badge.textContent = "당신의 차례! 순서대로 클릭!";
+                    badge.className = "px-3 py-1 bg-pink-950 text-pink-300 border border-pink-600 text-[10px] font-extrabold rounded-full animate-bounce-short";
+                    return;
+                }
+
+                const cardIdx = generatedSequence[step];
+                flashCard(cardIdx);
+                highlightDot(step, 'active');
+                step++;
+            }, speed);
+        }
+
+        function flashCard(cardIdx) {
+            const card = document.getElementById(`card-${cardIdx}`);
+            if (!card) return;
+
+            playSound('flip');
+            card.classList.add('flipped');
+            card.querySelector('.card-inner').classList.add('card-active');
+
+            setTimeout(() => {
+                card.classList.remove('flipped');
+                card.querySelector('.card-inner').classList.remove('card-active');
+            }, 380);
+        }
+
+        function highlightDot(stepIdx, state) {
+            const dot = document.getElementById(`seq-dot-${stepIdx}`);
+            if (!dot) return;
+
+            if (state === 'active') {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-pink-500 shadow-md shadow-pink-500/50 scale-125 transition-all';
+            } else if (state === 'correct') {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-green-500 shadow-md shadow-green-500/50 transition-all';
+            } else if (state === 'wrong') {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-shake transition-all';
+            }
+        }
+
+        function handleCardClick(cardIdx) {
+            if (!isUserTurn || isShowingPattern) return;
+
+            playSound('click');
+            flashCard(cardIdx);
+
+            gameState.stats.cardsClicked++;
+            updateMissionProgress('d2', 1);
+
+            const expectedIdx = generatedSequence[userClickIndex];
+
+            if (cardIdx === expectedIdx) {
+                highlightDot(userClickIndex, 'correct');
+                userClickIndex++;
+
+                if (userClickIndex >= generatedSequence.length) {
+                    isUserTurn = false;
+                    setTimeout(onLevelClear, 400);
+                }
+            } else {
+                highlightDot(userClickIndex, 'wrong');
+                isUserTurn = false;
+                setTimeout(onLevelFail, 400);
+            }
+        }
+
+        function onLevelClear() {
+            playSound('success');
+            if (window.confetti) {
+                confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+            }
+
+            const config = getStageConfig(getStageFromLevel(currentGameLevel));
+            const earnedCoins = config.coinBonus + (currentGameLevel * 5);
+            gameState.coins += earnedCoins;
+
+            if (currentGameLevel === gameState.maxUnlockedLevel && gameState.maxUnlockedLevel < 50) {
+                gameState.maxUnlockedLevel++;
+            }
+
+            updateMissionProgress('d3', 1);
+            updateMissionProgress('w1', 1);
+            updateMissionProgress('m1', 1);
+
+            if (currentGameLevel === 1) updateMissionProgress('a1', 1);
+            if (currentGameLevel === 10) updateMissionProgress('a2', 1);
+            if (currentGameLevel === 25) updateMissionProgress('a3', 1);
+            if (currentGameLevel === 50) updateMissionProgress('a4', 1);
+
+            if (getStageFromLevel(currentGameLevel) >= 2) updateMissionProgress('w2', 1);
+            if (getStageFromLevel(currentGameLevel) === 3 && currentGameLevel === 21) {
+                updateMissionProgress('m2', 1);
+            }
+
+            saveData();
+            updateUI();
+            syncGame1ToFirebase();
+
+            document.getElementById('clear-modal-subtitle').textContent = `Level ${currentGameLevel}을 성공적으로 클리어했습니다!`;
+            document.getElementById('clear-modal-coins').textContent = `+${earnedCoins} Coins`;
+            document.getElementById('clear-modal-count').textContent = `${generatedSequence.length}개 카드 암기 완수`;
+            
+            const nextBtn = document.getElementById('btn-next-level');
+            if (nextBtn) {
+                if (currentGameLevel < 50) {
+                    nextBtn.textContent = `다음 단계 도전하기 (Level ${currentGameLevel + 1})`;
+                } else {
+                    nextBtn.textContent = `최종 단계 완주!`;
+                }
+            }
+
+            document.getElementById('modal-clear').classList.remove('hidden');
+        }
+
+        function onLevelFail() {
+            playSound('fail');
+
+            gameState.hearts = Math.max(0, gameState.hearts - 1);
+            saveData();
+            updateUI();
+
+            document.getElementById('fail-remaining-hearts').textContent = gameState.hearts;
+            document.getElementById('modal-fail').classList.remove('hidden');
+        }
+
+        function giveUpGame() {
+            if (!isUserTurn && !isShowingPattern) return;
+            document.getElementById('modal-giveup').classList.remove('hidden');
+        }
+
+        function confirmGiveUpAction() {
+            closeModal('modal-giveup');
+            onLevelFail();
+        }
+
+        function nextLevelAction() {
+            closeModal('modal-clear');
+            if (currentGameLevel < 50) {
+                startSpecificLevel(currentGameLevel + 1);
+            } else {
+                showAlert('축하합니다! 모든 단계(Level 50)를 최고 기록으로 완주하셨습니다!');
+                navTo('stages');
+            }
+        }
+
+        function retryLevelAction() {
+            closeModal('modal-fail');
+            startSpecificLevel(currentGameLevel);
+        }
+
+        function stopAndQuitAction(targetView) {
+            closeModal('modal-clear');
+            closeModal('modal-fail');
+            navTo(targetView);
+        }
+
+        function updateSelectionHighlight() {
+            const items = document.querySelectorAll('#room-elements-layer .draggable-item');
+            items.forEach(item => {
+                const instId = item.dataset.instanceId;
+                const isSelected = instId === selectedInstanceId;
+                const innerBox = item.querySelector('.item-box');
+                
+                let toolbar = item.querySelector('.layer-btn');
+
+                if (isSelected && !toolbar) {
+                    const inst = gameState.equippedRoom.placedItems.find(i => i.instanceId === instId);
+                    if (inst) {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = `
+                            <div class="layer-btn absolute -top-8 left-1/2 -translate-x-1/2 flex space-x-1 z-30 bg-slate-900/90 border border-slate-700 rounded-lg p-0.5 shadow-lg">
+                                <button onclick="adjustZIndex('${inst.instanceId}', 1, event)" class="w-5 h-5 bg-pink-600 hover:bg-pink-500 text-white rounded text-[10px]">▲</button>
+                                <button onclick="adjustZIndex('${inst.instanceId}', -1, event)" class="w-5 h-5 bg-pink-600 hover:bg-pink-500 text-white rounded text-[10px]">▼</button>
+                                <button onclick="flipInstance('${inst.instanceId}', event)" class="w-5 h-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px]">🔄</button>
+                                <button onclick="removePlacedInstance('${inst.instanceId}', event)" class="w-5 h-5 bg-red-600 hover:bg-red-500 text-white rounded text-[10px]">🗑️</button>
+                            </div>
+                        `;
+                        item.insertBefore(tempDiv.firstElementChild, item.firstChild);
+                    }
+                } else if (!isSelected && toolbar) {
+                    toolbar.remove();
+                }
+
+                if (innerBox) {
+                    if (isSelected) {
+                        innerBox.classList.add('ring-2', 'ring-pink-500', 'bg-pink-500/10');
+                    } else {
+                        innerBox.classList.remove('ring-2', 'ring-pink-500', 'bg-pink-500/10');
+                    }
+                }
+            });
+        }
+
+        function deselectRoomItems(e) {
+            if (e && e.target && (e.target.id === 'room-viewport' || e.target.id === 'room-wall-layer' || e.target.id === 'room-floor-layer' || e.target.id === 'room-elements-layer')) {
+                selectedInstanceId = null;
+                updateSelectionHighlight();
+            }
+        }
+
+        function makeElementDraggable(element, instanceObj) {
+            let isDragging = false;
+            let startX, startY, initialX, initialY;
+            let currentX = instanceObj.x;
+            let currentY = instanceObj.y;
+            let rafId = null;
+
+            const startDrag = (e) => {
+                if (e.target.closest('.layer-btn')) return;
+                
+                if (selectedInstanceId !== instanceObj.instanceId) {
+                    selectedInstanceId = instanceObj.instanceId;
+                    updateSelectionHighlight();
+                }
+
+                isDragging = true;
+                const viewport = document.getElementById('room-viewport');
+                const rect = viewport.getBoundingClientRect();
+                
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+                startX = clientX;
+                startY = clientY;
+                initialX = instanceObj.x;
+                initialY = instanceObj.y;
+
+                const updatePosition = () => {
+                    if (!isDragging) return;
+                    element.style.left = `${currentX}%`;
+                    element.style.top = `${currentY}%`;
+                    rafId = null;
+                };
+
+                const onMove = (moveEvent) => {
+                    if (!isDragging) return;
+                    if (moveEvent.cancelable) moveEvent.preventDefault();
+
+                    const curX = moveEvent.touches ? moveEvent.touches[0].clientX : moveEvent.clientX;
+                    const curY = moveEvent.touches ? moveEvent.touches[0].clientY : moveEvent.clientY;
+
+                    let newX = initialX + ((curX - startX) / rect.width) * 100;
+                    let newY = initialY + ((curY - startY) / rect.height) * 100;
+
+                    // 아이템 실제 크기(px)를 반영하여 방 오른쪽/아래쪽 벽을 넘지 않는 최대 비율(%) 동적 계산
+                    const maxPercentX = Math.max(0, 100 - (element.offsetWidth / rect.width) * 100);
+                    const maxPercentY = Math.max(0, 100 - (element.offsetHeight / rect.height) * 100);
+
+                    currentX = Math.max(0, Math.min(maxPercentX, newX));
+                    currentY = Math.max(0, Math.min(maxPercentY, newY));
+
+                    instanceObj.x = currentX;
+                    instanceObj.y = currentY;
+
+                    if (!rafId) {
+                        rafId = requestAnimationFrame(updatePosition);
+                    }
+                };
+
+                const onEnd = () => {
+                    if (isDragging) {
+                        isDragging = false;
+                        if (rafId) cancelAnimationFrame(rafId);
+                        saveData();
+                    }
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onEnd);
+                    window.removeEventListener('touchmove', onMove);
+                    window.removeEventListener('touchend', onEnd);
+                };
+
+                window.addEventListener('mousemove', onMove, { passive: false });
+                window.addEventListener('mouseup', onEnd);
+                window.addEventListener('touchmove', onMove, { passive: false });
+                window.addEventListener('touchend', onEnd);
+            };
+
+            element.onmousedown = startDrag;
+            element.ontouchstart = startDrag;
+        }
+
+        function adjustZIndex(instanceId, delta, e) {
+            if (e) e.stopPropagation();
+            playSound('click');
+            const item = gameState.equippedRoom.placedItems.find(i => i.instanceId === instanceId);
+            if (item) {
+                item.zIndex = Math.max(1, Math.min(100, (item.zIndex || 10) + delta));
+                saveData();
+                renderEquippedRoom();
+            }
+        }
+
+        function flipInstance(instanceId, e) {
+            if (e) e.stopPropagation();
+            playSound('click');
+            const item = gameState.equippedRoom.placedItems.find(i => i.instanceId === instanceId);
+            if (item) {
+                item.flipped = !item.flipped;
+                saveData();
+                renderEquippedRoom();
+            }
+        }
+
+        function removePlacedInstance(instanceId, e) {
+            if (e) e.stopPropagation();
+            playSound('click');
+            gameState.equippedRoom.placedItems = gameState.equippedRoom.placedItems.filter(i => i.instanceId !== instanceId);
+            if (selectedInstanceId === instanceId) selectedInstanceId = null;
+            saveData();
+            updateUI();
+            renderRoomShopGrid();
+        }
+
+        function renderEquippedRoom() {
+            const eq = gameState.equippedRoom;
+            const wpItem = ROOM_ITEMS_CATALOG.find(i => i.id === eq.wallpaper) || ROOM_ITEMS_CATALOG[0];
+
+            document.getElementById('room-wall-layer').style.backgroundColor = wpItem.wallBg || '#3b0764';
+            document.getElementById('room-floor-layer').style.backgroundColor = wpItem.floorBg || '#581c87';
+
+            const container = document.getElementById('room-elements-layer');
+            container.innerHTML = '';
+
+            (eq.placedItems || []).forEach((inst) => {
+                const catalogItem = ROOM_ITEMS_CATALOG.find(i => i.id === inst.itemId);
+                if (!catalogItem) return;
+
+                const isSelected = selectedInstanceId === inst.instanceId;
+
+                // [수정 코드 - renderEquippedRoom 함수 내]
+                const itemDiv = document.createElement('div');
+                itemDiv.className = `draggable-item absolute flex flex-col items-center select-none`;
+                itemDiv.dataset.instanceId = inst.instanceId;
+                itemDiv.style.left = `${inst.x}%`;
+                itemDiv.style.top = `${inst.y}%`;
+                itemDiv.style.zIndex = inst.zIndex || 10;
+
+                const displayContent = catalogItem.img 
+                    ? `<img src="${catalogItem.img}" alt="${catalogItem.name}" class="h-16 w-auto object-contain pointer-events-none ${inst.flipped ? 'flipped-x' : ''}">`
+                    : `<i class="fa-solid ${catalogItem.icon} text-3xl pointer-events-none ${inst.flipped ? 'flipped-x' : ''}"></i>`;
+
+                const controlsHtml = isSelected ? `
+                    <div class="layer-btn absolute -top-8 left-1/2 -translate-x-1/2 flex space-x-1 z-30 bg-slate-900/90 border border-slate-700 rounded-lg p-0.5 shadow-lg">
+                        <button onclick="adjustZIndex('${inst.instanceId}', 1, event)" class="w-5 h-5 bg-pink-600 hover:bg-pink-500 text-white rounded text-[10px]">▲</button>
+                        <button onclick="adjustZIndex('${inst.instanceId}', -1, event)" class="w-5 h-5 bg-pink-600 hover:bg-pink-500 text-white rounded text-[10px]">▼</button>
+                        <button onclick="flipInstance('${inst.instanceId}', event)" class="w-5 h-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px]">🔄</button>
+                        <button onclick="removePlacedInstance('${inst.instanceId}', event)" class="w-5 h-5 bg-red-600 hover:bg-red-500 text-white rounded text-[10px]">🗑️</button>
+                    </div>
+                ` : '';
+
+                itemDiv.innerHTML = `
+                    ${controlsHtml}
+                    <div class="item-box p-1 rounded-xl ${isSelected ? 'ring-2 ring-pink-500 bg-pink-500/10' : ''}">
+                        ${displayContent}
+                    </div>
+                `;
+
+                container.appendChild(itemDiv);
+                makeElementDraggable(itemDiv, inst);
+            });
+        }
+
+        function switchRoomCategory(cat) {
+            currentRoomCategory = cat;
+            const tabs = document.querySelectorAll('.room-tab');
+            tabs.forEach(t => {
+                t.classList.remove('bg-indigo-600', 'text-white');
+                t.classList.add('text-slate-400');
+            });
+            const active = document.getElementById(`tab-r-${cat}`);
+            if (active) {
+                active.classList.remove('text-slate-400');
+                active.classList.add('bg-indigo-600', 'text-white');
+            }
+            renderRoomShopGrid();
+        }
+
+        function renderRoomShopGrid() {
+            const grid = document.getElementById('room-shop-grid');
+            grid.innerHTML = '';
+
+            const items = ROOM_ITEMS_CATALOG.filter(i => i.category === currentRoomCategory);
+
+            items.forEach(item => {
+                const isOwned = gameState.inventory.includes(item.id);
+                const placedCount = (gameState.equippedRoom.placedItems || []).filter(i => i.itemId === item.id).length;
+                const isWallpaper = item.category === 'wallpaper';
+                const isEquippedWallpaper = isWallpaper && gameState.equippedRoom.wallpaper === item.id;
+
+                const card = document.createElement('div');
+                card.className = `p-2.5 rounded-2xl border transition flex flex-col justify-between items-center text-center ${
+                    (isWallpaper ? isEquippedWallpaper : placedCount > 0) ? 'bg-indigo-950/60 border-indigo-500 shadow-md' :
+                    isOwned ? 'bg-slate-900 border-slate-700' :
+                    'bg-slate-900/60 border-slate-800'
+                }`;
+
+                const previewHtml = item.img 
+                    ? `<img src="${item.img}" alt="${item.name}" class="w-8 h-8 object-contain">`
+                    : (item.icon ? `<i class="fa-solid ${item.icon} text-indigo-300"></i>` : `<i class="fa-solid fa-paintbrush text-pink-400"></i>`);
+
+                let btnText = '구매하기';
+                let btnClass = 'bg-amber-600 hover:bg-amber-500 text-white';
+
+                if (isWallpaper) {
+                    if (isEquippedWallpaper) {
+                        btnText = '적용 중';
+                        btnClass = 'bg-indigo-700 text-white border border-indigo-500';
+                    } else if (isOwned) {
+                        btnText = '벽지 변경';
+                        btnClass = 'bg-slate-800 hover:bg-slate-700 text-slate-200';
+                    }
+                } else {
+                    if (isOwned) {
+                        btnText = placedCount > 0 ? `추가 배치 (${placedCount}개)` : '방에 배치';
+                        btnClass = 'bg-slate-800 hover:bg-slate-700 text-slate-200';
+                    }
+                }
+
+                card.innerHTML = `
+                    <div class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl my-1 overflow-hidden p-1">
+                        ${previewHtml}
+                    </div>
+                    <div class="font-extrabold text-3xs text-white">${item.name}</div>
+                    <div class="text-3xs text-slate-400 mb-1.5">${isOwned ? '보유 중' : `${item.price} 코인`}</div>
+
+                    <button onclick="handleRoomItemAction('${item.id}')" class="w-full py-1 font-bold text-3xs rounded-lg transition ${btnClass}">
+                        ${btnText}
+                    </button>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function handleRoomItemAction(itemId) {
+            playSound('click');
+            const item = ROOM_ITEMS_CATALOG.find(i => i.id === itemId);
+            if (!item) return;
+
+            const isOwned = gameState.inventory.includes(itemId);
+
+            if (isOwned) {
+                if (item.category === 'wallpaper') {
+                    gameState.equippedRoom.wallpaper = itemId;
+                } else {
+                    const currentMaxZ = (gameState.equippedRoom.placedItems || []).reduce((max, i) => Math.max(max, i.zIndex || 10), 10);
+                    const newInstId = 'inst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+                    gameState.equippedRoom.placedItems.push({
+                        instanceId: newInstId,
+                        itemId: itemId,
+                        x: 20 + Math.random() * 30,
+                        y: 20 + Math.random() * 30,
+                        zIndex: currentMaxZ + 1,
+                        flipped: false
+                    });
+                    selectedInstanceId = newInstId;
+                }
+                saveData();
+                updateUI();
+                renderRoomShopGrid();
+            } else {
+                if (gameState.coins >= item.price) {
+                    gameState.coins -= item.price;
+                    gameState.inventory.push(itemId);
+
+                    if (item.category === 'wallpaper') {
+                        gameState.equippedRoom.wallpaper = itemId;
+                    } else {
+                        const currentMaxZ = (gameState.equippedRoom.placedItems || []).reduce((max, i) => Math.max(max, i.zIndex || 10), 10);
+                        const newInstId = 'inst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+                        gameState.equippedRoom.placedItems.push({
+                            instanceId: newInstId,
+                            itemId: itemId,
+                            x: 20 + Math.random() * 30,
+                            y: 20 + Math.random() * 30,
+                            zIndex: currentMaxZ + 1,
+                            flipped: false
+                        });
+                        selectedInstanceId = newInstId;
+                    }
+
+                    saveData();
+                    updateUI();
+                    renderRoomShopGrid();
+                    showAlert(`${item.name}을(를) 구매하여 내 방에 배치했습니다!`);
+                } else {
+                    showAlert('코인이 부족합니다! 스테이지를 클리어하여 코인을 모아보세요.');
+                }
+            }
+        }
+
+        async function renderRankingList() {
+            document.getElementById('my-rank-nickname').textContent = `${gameState.nickname} (나)`;
+            document.getElementById('my-rank-level').textContent = `Level ${gameState.maxUnlockedLevel}`;
+
+            const container = document.getElementById('ranking-list-container');
+
+            if (!navigator.onLine) {
+                container.innerHTML = `
+                    <div class="p-4 bg-slate-900 border border-slate-800 rounded-xl text-center my-4">
+                        <i class="fa-solid fa-wifi-slash text-amber-400 text-xl mb-2"></i>
+                        <div class="text-xs font-bold text-slate-300">오프라인 상태입니다</div>
+                        <div class="text-[10px] text-slate-500 mt-1">인터넷 연결 시 전체 랭킹이 동기화됩니다.</div>
+                    </div>`;
+                document.getElementById('my-rank-number').textContent = '-';
+                return;
+            }
+
+            container.innerHTML = '<div class="text-center text-slate-400 py-4 text-xs">최신 랭킹 불러오는 중...</div>';
+
+            let retries = 0;
+            while (!window.db && retries < 10) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+                retries++;
+            }
+
+            if (!window.db) {
+                container.innerHTML = '<div class="text-center text-red-400 py-4 text-xs">DB 연결 실패 (페이지 새로고침 필요)</div>';
+                return;
+            }
+
+            try {
+                const rankingsRef = window.fsDoc(window.db, "rankings", "dummy").parent;
+                
+                const rankingQuery = window.fsQuery(
+                    rankingsRef,
+                    window.fsOrderBy("game1_maxLevel", "desc"),
+                    window.fsLimit(50)
+                );
+
+                const querySnapshot = await window.fsGetDocs(rankingQuery);
+                container.innerHTML = '';
+
+                let rankNum = 1;
+                let myRankFound = null;
+
+                querySnapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    if (data.game1_maxLevel !== undefined) {
+                        const isMe = data.userId === window.userId;
+                        if (isMe) myRankFound = rankNum;
+
+                        const row = document.createElement('div');
+                        row.className = `p-2.5 rounded-xl border flex items-center justify-between ${
+                            isMe ? 'bg-gradient-to-r from-pink-950/70 to-purple-950/70 border-pink-500/80 shadow-md' : 'bg-slate-900 border-slate-800'
+                        }`;
+
+                        row.innerHTML = `
+                            <div class="flex items-center space-x-3">
+                                <div class="w-7 font-black text-center text-xs ${
+                                    rankNum === 1 ? 'text-amber-400 text-sm' :
+                                    rankNum === 2 ? 'text-slate-300' :
+                                    rankNum === 3 ? 'text-amber-600' : 'text-slate-500'
+                                }">
+                                    ${rankNum <= 3 ? `<i class="fa-solid fa-crown"></i>` : `#${rankNum}`}
+                                </div>
+                                <div class="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs text-indigo-300">
+                                    <i class="fa-solid fa-user-astronaut"></i>
+                                </div>
+                                <div>
+                                    <div class="font-bold text-xs text-white flex items-center space-x-1">
+                                        <span>${data.game1_nickname || '익명'}</span>
+                                        ${isMe ? '<span class="text-[10px] text-pink-400 font-extrabold">(나)</span>' : ''}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="font-black text-xs text-pink-400">
+                                Level ${data.game1_maxLevel}
+                            </div>
+                        `;
+                        container.appendChild(row);
+                        rankNum++;
+                    }
+                });
+
+                document.getElementById('my-rank-number').textContent = myRankFound ? `#${myRankFound}` : '50위 밖';
+
+            } catch (error) {
+                console.error("Game1 랭킹 로드 실패:", error);
+                container.innerHTML = '<div class="text-center text-red-400 py-4 text-xs">랭킹 데이터를 불러오지 못했습니다.</div>';
+            }
+        }
+
+        function editPlayerNickname() {
+            const current = gameState.nickname;
+            const newName = prompt('변경할 닉네임을 입력하세요 (최대 8자):', current);
+            if (newName && newName.trim().length > 0) {
+                gameState.nickname = newName.trim().substring(0, 8);
+                saveData();
+                updateUI();
+                syncGame1ToFirebase();
+                renderRankingList();
+            }
+        }
+
+        function switchMissionTab(tab) {
+            currentMissionTab = tab;
+            const tabs = document.querySelectorAll('.mission-tab');
+            tabs.forEach(t => {
+                t.classList.remove('bg-pink-600', 'text-white');
+                t.classList.add('text-slate-400');
+            });
+            const active = document.getElementById(`tab-m-${tab}`);
+            if (active) {
+                active.classList.remove('text-slate-400');
+                active.classList.add('bg-pink-600', 'text-white');
+            }
+            renderMissionList();
+        }
+
+        function renderMissionList() {
+            const container = document.getElementById('mission-list-container');
+            container.innerHTML = '';
+
+            const missionArray = gameState.missions[currentMissionTab] || [];
+
+            missionArray.forEach(m => {
+                const isComplete = m.progress >= m.target;
+
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-2xl border flex items-center justify-between ${
+                    m.claimed ? 'bg-slate-950 border-slate-900 opacity-60' :
+                    isComplete ? 'bg-gradient-to-r from-pink-950/60 to-purple-950/60 border-pink-500 shadow-md' :
+                    'bg-slate-900 border-slate-800'
+                }`;
+
+                card.innerHTML = `
+                    <div class="space-y-1 flex-1 pr-2">
+                        <div class="font-bold text-xs text-white">${m.title}</div>
+                        <div class="text-[10px] text-slate-400 flex items-center space-x-2">
+                            <span>보상:</span>
+                            <span class="text-red-400 font-bold flex items-center"><i class="fa-solid fa-heart mr-0.5"></i>+${m.rewardHearts}</span>
+                            <span class="text-amber-400 font-bold flex items-center"><i class="fa-solid fa-coins mr-0.5"></i>+${m.rewardCoins}</span>
+                        </div>
+                        <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
+                            <div class="bg-pink-500 h-full rounded-full" style="width: ${Math.min(100, (m.progress / m.target) * 100)}%;"></div>
+                        </div>
+                    </div>
+
+                    <button onclick="claimMissionReward('${currentMissionTab}', '${m.id}')" ${!isComplete || m.claimed ? 'disabled' : ''} class="px-3 py-1.5 font-extrabold text-[10px] rounded-xl transition shrink-0 ${
+                        m.claimed ? 'bg-slate-800 text-slate-600' :
+                        isComplete ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-lg animate-pulse' :
+                        'bg-slate-800 text-slate-500'
+                    }">
+                        ${m.claimed ? '수령완료' : isComplete ? '보상받기' : `${m.progress}/${m.target}`}
+                    </button>
+                `;
+
+                container.appendChild(card);
+            });
+        }
+
+        function updateMissionProgress(missionId, amount) {
+            Object.keys(gameState.missions).forEach(cat => {
+                const list = gameState.missions[cat];
+                const mission = list.find(m => m.id === missionId);
+                if (mission && !mission.claimed) {
+                    mission.progress += amount;
+                }
+            });
+            checkMissionBadge();
+        }
+
+        function checkMissionBadge() {
+            let hasGlobalUnclaimed = false;
+            const categories = ['daily', 'weekly', 'monthly', 'achievement'];
+
+            categories.forEach(cat => {
+                const hasUnclaimedInCat = (gameState.missions[cat] || []).some(m => m.progress >= m.target && !m.claimed);
+                if (hasUnclaimedInCat) hasGlobalUnclaimed = true;
+
+                const pingEl = document.getElementById(`badge-tab-${cat}`);
+                const dotEl = document.getElementById(`badge-tab-${cat}-dot`);
+
+                if (dotEl) {
+                    if (hasUnclaimedInCat) {
+                        dotEl.classList.remove('hidden');
+                        if (pingEl) pingEl.classList.remove('hidden');
+                    } else {
+                        dotEl.classList.add('hidden');
+                        if (pingEl) pingEl.classList.add('hidden');
+                    }
+                }
+            });
+
+            const badgeDot = document.getElementById('mission-badge-dot');
+            const badgeDotStatic = document.getElementById('mission-badge-dot-static');
+
+            if (badgeDot && badgeDotStatic) {
+                if (hasGlobalUnclaimed) {
+                    badgeDot.classList.remove('hidden');
+                    badgeDotStatic.classList.remove('hidden');
+                } else {
+                    badgeDot.classList.add('hidden');
+                    badgeDotStatic.classList.add('hidden');
+                }
+            }
+        }
+
+        function claimMissionReward(category, missionId) {
+            playSound('click');
+            const list = gameState.missions[category];
+            const mission = list.find(m => m.id === missionId);
+
+            if (mission && mission.progress >= mission.target && !mission.claimed) {
+                mission.claimed = true;
+                
+                gameState.hearts += mission.rewardHearts;
+                gameState.coins += mission.rewardCoins;
+
+                saveData();
+                updateUI();
+                renderMissionList();
+                showAlert(`미션 완료! 하트 +${mission.rewardHearts}개, 코인 +${mission.rewardCoins}개를 획득했습니다!`);
+            }
+        }
+
+        function watchRewardAd() {
+            playSound('click');
+            document.getElementById('modal-ad').classList.remove('hidden');
+            document.getElementById('btn-close-ad').disabled = true;
+
+            let leftSec = 5;
+            const timerEl = document.getElementById('ad-timer');
+            const btnEl = document.getElementById('btn-close-ad');
+
+            timerEl.textContent = `${leftSec}초 후 보상...`;
+
+            const interval = setInterval(() => {
+                leftSec--;
+                if (leftSec <= 0) {
+                    clearInterval(interval);
+                    timerEl.textContent = '보상 수령 가능!';
+                    btnEl.disabled = false;
+                    btnEl.className = 'w-full py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white font-extrabold rounded-xl shadow-lg transition';
+                } else {
+                    timerEl.textContent = `${leftSec}초 후 보상...`;
+                }
+            }, 1000);
+        }
+
+        function finishRewardAd() {
+            closeModal('modal-ad');
+            
+            gameState.hearts += 1;
+            gameState.coins += 200;
+            gameState.stats.adsWatched++;
+            updateMissionProgress('w3', 1);
+
+            saveData();
+            updateUI();
+            showAlert('광고 시청 완료! 하트 +1개 & 200코인을 수령했습니다!');
+        }
+
+        function testPurchase(type, addHearts, addCoins, priceText) {
+            playSound('click');
+            pendingPurchaseInfo = { type, addHearts, addCoins, priceText };
+            document.getElementById('purchase-modal-desc').textContent = `상품: 하트 ${addHearts}개 + ${addCoins} 코인\n가격: ${priceText}\n\n* 테스트 결제 진행 시 실제 비용이 청구되지 않으며 바로 하트와 코인이 충전됩니다. (최대 수량 초과 가능)`;
+            document.getElementById('modal-purchase').classList.remove('hidden');
+        }
+
+        function confirmTestPurchase() {
+            closeModal('modal-purchase');
+            if (pendingPurchaseInfo) {
+                gameState.hearts += pendingPurchaseInfo.addHearts;
+                gameState.coins += pendingPurchaseInfo.addCoins;
+
+                saveData();
+                updateUI();
+                showAlert(`결제 완료! 하트 +${pendingPurchaseInfo.addHearts}개와 ${pendingPurchaseInfo.addCoins}코인이 지급되었습니다.`);
+                pendingPurchaseInfo = null;
+            }
+        }
+
+        function openShopModal() {
+            navTo('shop');
+        }
+
+        function showAlert(msg) {
+            document.getElementById('alert-message-text').textContent = msg;
+            document.getElementById('modal-alert').classList.remove('hidden');
+        }
+
+        function closeModal(modalId) {
+            playSound('click');
+            const modal = document.getElementById(modalId);
+            if (modal) modal.classList.add('hidden');
+        }
+
+        window.onload = function () {
+            loadSavedData();
+            startHeartbeatTimer();
+            
+            setTimeout(() => {
+                syncGame1ToFirebase();
+            }, 1000);
+        };
+    </script>
+</body>
+</html>
